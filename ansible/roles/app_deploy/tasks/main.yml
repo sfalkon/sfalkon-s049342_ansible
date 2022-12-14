@@ -1,0 +1,123 @@
+---
+# tasks file for roles/app_deploy
+
+- name: Setup prepared
+  block:
+    - name: Install repos
+      ansible.builtin.yum:
+        name:
+          - epel-release
+          - centos-release-scl
+        state: present
+
+    - name: Install the 'Development tools' package group
+      ansible.builtin.yum:
+        name: "@Development tools"
+        state: present
+
+    - name: Install addons packages
+      ansible.builtin.yum:
+        name:
+          - libxml2-devel
+          - libxslt-devel
+          - libpq5-devel
+          - git
+          - nodejs
+        state: present
+
+    - name: Install ruby 2.5
+      ansible.builtin.yum:
+        name:
+          - rh-ruby25
+          - rh-ruby25-ruby-devel
+          - rh-ruby25-rubygem-bundler
+        enablerepo:
+          centos-sclo-rh
+        state: present
+
+- name: Configure System
+  block:
+    - name: Add system user
+      ansible.builtin.user:
+        name: '{{ service_user }}'
+        state: present
+        system: true
+
+    - name: Copy service-file to systemd folder
+      ansible.builtin.template:
+        src: xpaste_practicum.service.j2
+        dest: /usr/lib/systemd/system/xpaste_practicum.service
+
+    - name: Copy service env-file
+      ansible.builtin.template:
+        src: xpaste_practicum.env.j2
+        dest: /etc/sysconfig/xpaste_practicum
+
+    - name: Add ruby profile
+      ansible.builtin.copy:
+        src: rh-ruby25.sh
+        dest: /etc/profile.d/rh-ruby25.sh
+
+- name: Deploy RubyOnRails application
+  become: false
+  block:
+    - name: Clone repository
+      ansible.builtin.git:
+        repo: git@gitlab.slurm.io:edu/xpaste_practicum.git
+        dest: /tmp/xpaste_practicum
+        force: true
+
+    - name: Install bundler
+      ansible.builtin.shell:
+        cmd: source /etc/profile.d/rh-ruby25.sh; gem install bundler:1.16.2
+
+    - name: Bundle config
+      ansible.builtin.shell:
+        cmd: source /etc/profile.d/rh-ruby25.sh; bundle config build.nokogiri --use-system-libraries
+        chdir: /tmp/xpaste_practicum
+
+    - name: Bundle install requirements
+      ansible.builtin.shell:
+        cmd: source /etc/profile.d/rh-ruby25.sh; bundle install --clean --no-cache --without development
+        chdir: /tmp/xpaste_practicum
+      register: command_result
+      failed_when: '"complete!" not in command_result.stdout'
+      changed_when: '"complete!" in command_result.stdout'
+      ignore_errors: true
+
+    - name: Fix gem
+      become: true
+      ansible.builtin.shell:
+        cmd: source /etc/profile.d/rh-ruby25.sh; gem pristine --all
+        chdir: /tmp/xpaste_practicum
+
+- name: Prepared run application
+  block:
+    - name: Create tmp directory
+      ansible.builtin.file:
+        name: /tmp/xpaste_practicum/tmp
+        owner: "{{ service_user }}"
+        state: directory
+
+    - name: Delete application directory
+      ansible.builtin.file:
+        name: '{{ setup_path }}'
+        force: true
+        state: absent
+
+    - name: Move application directory
+      ansible.builtin.command:
+        cmd:  'mv /tmp/xpaste_practicum/ {{ setup_path }}'
+
+    - name: Copy run script
+      ansible.builtin.template:
+        src: run.sh.j2
+        dest: '{{ setup_path }}/run.sh'
+        mode: 0755
+
+- name: Run application
+  ansible.builtin.systemd:
+    name: xpaste_practicum
+    state: restarted
+    daemon_reload: yes
+    enabled: yes

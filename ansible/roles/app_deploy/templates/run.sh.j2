@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+source /etc/profile.d/rh-ruby25.sh
+
+bundle exec rake db:migrate
+bundle exec puma -b unix://{{ rails_unix_socket }} -e $RAILS_ENV config.ru

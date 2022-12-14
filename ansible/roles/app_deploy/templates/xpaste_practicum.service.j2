@@ -1,0 +1,21 @@
+[Unit]
+Description=Ruby on rails application xpaste_practicum
+
+[Service]
+Type=fork
+RuntimeDirectory=rails
+WorkingDirectory={{ setup_path }}
+EnvironmentFile=/etc/sysconfig/xpaste_practicum
+User={{ service_user }}
+ExecStart=/app/run.sh
+# stop by sending only the main process a SIGQUIT signal
+KillMode=process
+KillSignal=SIGQUIT
+# Enable reloading unicorn via HUP signal
+ExecReload=/bin/kill -HUP $MAINPID
+# Try to restart the service after 1 second
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

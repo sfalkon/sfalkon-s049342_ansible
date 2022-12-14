@@ -1,0 +1,6 @@
+---
+# defaults file for roles/postgresql
+
+pgsql_version: 14
+pgsql_data: /var/lib/pgsql/{{ pgsql_version }}/data
+pgsql_initdb_args: -k --auth-host=md5 --auth-local=peer -E UTF8 --locale=en_US.UTF-8 -D {{ pgsql_data }}

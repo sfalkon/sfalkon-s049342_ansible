@@ -1,0 +1,95 @@
+---
+- name: Setup RubyOnRails application with environment
+  hosts:
+    all
+  vars:
+    db_host: 127.0.0.1
+    db_port: 5432
+    db_name: xpaste_practicum
+    db_user: xpaste_practicum
+    db_password: xpaste_practicum
+    setup_path: /app
+    rails_unix_socket: /var/run/rails/puma.sock
+
+  pre_tasks:
+    - name: Configure SELinux
+      become: true
+      block:
+      - name: "SELinux - Setup tools"
+        ansible.builtin.yum:
+          name:
+            - policycoreutils-python
+            - checkpolicy
+          state: present
+
+      - name: "SELinux - Copy type enforcement file"
+        ansible.builtin.copy:
+          src: httpd_socket.te
+          dest: /tmp/httpd_socket.te
+          mode: 0644
+
+      - name: "SELinux - checkmodule"
+        ansible.builtin.command: "checkmodule -M -m -o httpd_socket.mod httpd_socket.te"
+        args:
+          chdir: /tmp
+          creates: httpd_socket.mod
+
+      - name: "SELinux - semodule_package"
+        ansible.builtin.command: "semodule_package -o httpd_socket.pp -m httpd_socket.mod"
+        args:
+          chdir: /tmp
+          creates: httpd_socket.pp
+
+      - name: "SELinux - semodule install"
+        ansible.builtin.command: "semodule -i httpd_socket.pp"
+        args:
+          chdir: /tmp
+
+  roles:
+    - role: postgresql
+      become: yes
+    - role: geerlingguy.nginx
+      become: yes
+    - role: app_deploy
+      become: yes
+
+  post_tasks:
+    - name: Nginx configure
+      become: true
+      block:
+      - name: Copy nginx.conf
+        ansible.builtin.copy:
+          src: '{{ setup_path }}/config/nginx.conf'
+          dest: /etc/nginx/nginx.conf
+          remote_src: yes
+
+      - name: Fix unix-socket path
+        ansible.builtin.replace:
+          path:  /etc/nginx/nginx.conf
+          regexp: '^(.*server unix:)/var/run/puma.sock( fail_timeout=0;)$'
+          replace: '\1//{{ rails_unix_socket }}\2'
+
+      - name: Add root to location stylesheets
+        ansible.builtin.lineinfile:
+          path:  /etc/nginx/nginx.conf
+          insertafter: '.+/stylesheets/ {'
+          line:  'root {{ setup_path }}/app/assets/;'
+
+      - name: Replace assets location
+        ansible.builtin.replace:
+          path:  /etc/nginx/nginx.conf
+          regexp: '(.*location \^~ /)assets(/.*)'
+          replace:  '\1javascripts\2'
+
+      - name: Add root to location javascripts
+        ansible.builtin.lineinfile:
+          path:  /etc/nginx/nginx.conf
+          insertafter: '.+/javascripts/ {'
+          line:  ' root {{ setup_path }}/app/assets/;'
+
+      - name: Restart nginx
+        ansible.builtin.systemd:
+          name: nginx
+          state: restarted
+          daemon_reload: yes
+          enabled: yes

@@ -1,0 +1,16 @@
+---
+# defaults file for roles/app_deploy
+
+setup_path: /app
+service_user: rubyonrails
+
+rails_unix_socket: /tmp/puma.sock
+
+secret_key_base: DiUvVighpeytwuimHithiejThaydNeac
+rails_env: production
+rails_log_to_stdout: 1
+db_host: 127.0.0.1
+db_port: 5432
+db_name: xpaste_practicum
+db_user: xpaste_practicum
+db_password: xpaste_practicum

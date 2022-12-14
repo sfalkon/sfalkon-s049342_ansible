@@ -1,0 +1,51 @@
+---
+# tasks file for roles/postgresql
+
+- name: Add PostgreSQL repo
+  ansible.builtin.yum:
+    name: 
+      - https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+    validate_certs: false
+    state: present
+
+- name: Install PostgreSQL packages
+  ansible.builtin.yum:
+    name:
+      - postgresql{{ pgsql_version }}-server
+      - python-psycopg2
+
+- name: Check postgresql data directory exists
+  ansible.builtin.stat:
+    path: '{{ pgsql_data }}/base'
+  register:
+    data_directory
+
+- name: PostgreSQL initialization database cluster
+  become_user: postgres
+  ansible.builtin.shell: 
+    cmd: /usr/pgsql-{{ pgsql_version }}/bin/initdb {{ pgsql_initdb_args }}
+  when: not data_directory.stat.exists
+
+- name: Start PostgreSQL Cluster
+  ansible.builtin.systemd:
+    name: postgresql-{{ pgsql_version }}
+    enabled: yes
+    daemon_reload: yes
+    state: started
+
+- name: Add database objects
+  become_user: postgres
+  block: 
+  - name: Add user
+    community.general.postgresql_user:
+      name: "{{ db_user }}"
+      password: "{{ db_password }}"
+      state: present
+      encrypted: yes
+      role_attr_flags: LOGIN
+
+  - name: Add custom database
+    community.general.postgresql_db:
+      name: "{{ db_name }}"
+      owner: "{{ db_user }}"
+      state: present
